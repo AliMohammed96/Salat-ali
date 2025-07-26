@@ -1,0 +1,22 @@
+{
+  "name": "مواقيت الصلاة والطقس",
+  "short_name": "صلاة و طقس",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#f0f2f5",
+  "theme_color": "#005b96",
+  "description": "موقع يعرض أوقات الصلاة والطقس وبوصلة القبلة",
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
+
