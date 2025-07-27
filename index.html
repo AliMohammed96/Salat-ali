@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="robots" content="noindex, nofollow">
+  <title>مواقيت الصلاة والطقس</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      text-align: center;
+      background: #f0f2f5;
+      padding: 1rem;
+      color: #333;
+      margin: 0;
+    }
+    h1, h2 {
+        color: #005b96;
+    }
+    #main-container {
+        max-width: 600px;
+        margin: auto;
+    }
+    .prayer-time {
+      background: white;
+      padding: 1.5rem;
+      margin: 1rem auto;
+      border-radius: 15px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      width: 95%;
+      max-width: 450px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: transform 0.2s;
+    }
+    .prayer-time:hover {
+        transform: translateY(-5px);
+    }
+    .prayer-details {
+        text-align: right;
+    }
+    .prayer-details strong {
+        font-size: 1.5rem;
+        color: #003d66;
+    }
+    .prayer-details span {
+        font-size: 1.2rem;
+    }
+    .widget-container {
+        display: flex;
+        align-items: center;
+        gap: 15px;
+    }
+    .weather-widget {
+        font-size: 1rem;
+        text-align: center;
+    }
+    .small-compass, .large-compass-img {
+        width: 50px;
+        height: 50px;
+        border: none;
+        transition: transform 0.5s ease-out;
+    }
+    .large-compass {
+      margin-top: 2rem;
+      text-align: center;
+    }
+    .large-compass-img {
+      width: 200px;
+      height: 200px;
+    }
+    #loading {
+        font-size: 1.2rem;
+        color: #666;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="main-container">
+    <h1>مواقيت الصلاة والطقس</h1>
+    <div id="loading">جاري تحميل الأوقات والطقس...</div>
+    <div id="prayer-times"></div>
+
+    <div class="large-compass">
+      <h2>اتجاه القبلة</h2>
+      <img id="qibla-compass-large" class="large-compass-img" src="./compass.png" alt="بوصلة القبلة">
+    </div>
+  </div>
+
+  <audio id="adhan">
+    <source src="https://cdn.islamic.network/audio/adhan/adhan.mp3" type="audio/mp3">
+  </audio>
+
+  <script>
+    async function getPrayerAndWeatherTimes() {
+      const prayerContainer = document.getElementById("prayer-times");
+      const loadingIndicator = document.getElementById("loading");
+
+      try {
+        // 1. Get User's Location
+        const pos = await new Promise((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true });
+        });
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        // 2. Fetch Prayer Times
+        const prayerResponse = await fetch(`https://api.aladhan.com/v1/timings?latitude=${lat}&longitude=${lon}&method=4`);
+        if (!prayerResponse.ok) throw new Error('Failed to fetch prayer times');
+        const prayerData = await prayerResponse.json();
+        const timings = prayerData.data.timings;
+
+        // 3. Fetch Weather Data (Using a free weather API)
+        // Note: You need a free API key from OpenWeatherMap for this to work.
+        const weatherApiKey = 'YOUR_OPENWEATHERMAP_API_KEY'; // <-- استبدل هذا بمفتاح API الخاص بك
+        const weatherResponse = await fetch(`https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${weatherApiKey}&units=metric&lang=ar`);
+        let weatherInfo = { temp: 'N/A', description: 'غير متوفر' };
+        if (weatherResponse.ok) {
+            const weatherData = await weatherResponse.json();
+            weatherInfo = {
+                temp: Math.round(weatherData.main.temp),
+                description: weatherData.weather[0].description
+            };
+        }
+
+        loadingIndicator.style.display = 'none';
+        prayerContainer.innerHTML = "";
+
+        // 4. Display Prayer Times with Widgets
+        const prayerOrder = ["Fajr", "Dhuhr", "Asr", "Maghrib", "Isha"];
+        for (const name of prayerOrder) {
+          const time24 = timings[name];
+          const time12 = convertTo12HourFormat(time24);
+          const div = document.createElement("div");
+          div.className = "prayer-time";
+
+          div.innerHTML = `
+            <div class="prayer-details">
+              <strong>${translateName(name)}</strong>: <span>${time12}</span>
+            </div>
+            <div class="widget-container">
+                <div class="weather-widget">
+                    <div>${weatherInfo.temp}°م</div>
+                    <div>${weatherInfo.description}</div>
+                </div>
+                <img class="small-compass" src="./compass.png" alt="بوصلة القبلة المصغرة">
+            </div>
+          `;
+          prayerContainer.appendChild(div);
+        }
+
+        // 5. Set up Adhan check
+        setInterval(() => checkAdhan(timings), 30000); // Check every 30 seconds
+
+        // 6. Calculate and display Qibla direction
+        calculateQiblaDirection(lat, lon);
+
+      } catch (err) {
+        console.error(err);
+        loadingIndicator.innerText = "فشل في تحديد الموقع أو جلب البيانات. يرجى التأكد من تفعيل خدمة تحديد الموقع في متصفحك.";
+      }
+    }
+
+    function convertTo12HourFormat(time24) {
+      let [hours, minutes] = time24.split(':').map(Number);
+      const ampm = hours >= 12 ? 'م' : 'ص';
+      hours = hours % 12;
+      hours = hours ? hours : 12; // the hour '0' should be '12'
+      minutes = minutes < 10 ? '0' + minutes : minutes;
+      return hours + ':' + minutes + ' ' + ampm;
+    }
+
+    function translateName(name) {
+      const names = {
+        Fajr: "الفجر",
+        Dhuhr: "الظهر",
+        Asr: "العصر",
+        Maghrib: "المغرب",
+        Isha: "العشاء"
+      };
+      return names[name] || name;
+    }
+
+    function checkAdhan(timings) {
+      const now = new Date();
+      const current = now.getHours().toString().padStart(2, '0') + ":" + now.getMinutes().toString().padStart(2, '0');
+      const prayerTimes = [timings.Fajr, timings.Dhuhr, timings.Asr, timings.Maghrib, timings.Isha];
+
+      if (prayerTimes.includes(current)) {
+        document.getElementById("adhan").play().catch(e => console.log("Playback prevented by browser"));
+      }
+    }
+
+    // Qibla Calculation Functions
+    function calculateQiblaDirection(latitude, longitude) {
+      const kaabaLat = 21.4225;
+      const kaabaLon = 39.8262;
+
+      const latRad = toRadians(latitude);
+      const lonRad = toRadians(longitude);
+      const kaabaLatRad = toRadians(kaabaLat);
+      const kaabaLonRad = toRadians(kaabaLon);
+
+      const deltaLon = kaabaLonRad - lonRad;
+
+      const y = Math.sin(deltaLon);
+      const x = Math.cos(latRad) * Math.tan(kaabaLatRad) - Math.sin(latRad) * Math.cos(deltaLon);
+
+      let qiblaDirection = toDegrees(Math.atan2(y, x));
+      if (qiblaDirection < 0) {
+        qiblaDirection += 360;
+      }
+
+      // Rotate compass images
+      const largeCompass = document.getElementById('qibla-compass-large');
+      const smallCompasses = document.querySelectorAll('.small-compass');
+
+      if (largeCompass) {
+        largeCompass.style.transform = `rotate(${qiblaDirection}deg)`;
+      }
+      smallCompasses.forEach(compass => {
+        compass.style.transform = `rotate(${qiblaDirection}deg)`;
+      });
+    }
+
+    function toRadians(degrees) {
+      return degrees * Math.PI / 180;
+    }
+
+    function toDegrees(radians) {
+      return radians * 180 / Math.PI;
+    }
+
+    // Register Service Worker
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/service-worker.js')
+          .then(registration => {
+            console.log('Service Worker registered: ', registration);
+          })
+          .catch(error => {
+            console.log('Service Worker registration failed: ', error);
+          });
+      });
+    }
+
+    // Run the main function when the page loads
+    window.onload = getPrayerAndWeatherTimes;
+  </script>
+</body>
+</html>
+
